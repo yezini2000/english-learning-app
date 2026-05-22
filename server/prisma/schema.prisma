@@ -1,0 +1,64 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model File {
+  id            String         @id @default(uuid())
+  originalName  String
+  format        String
+  sizeBytes     Int
+  status        String         @default("pending") // pending, processing, completed, failed
+  extractedText String?
+  errorMessage  String?
+  createdAt     DateTime       @default(now())
+  processedAt   DateTime?
+  learningItems LearningItem[]
+
+  @@map("files")
+}
+
+model LearningItem {
+  id              String           @id @default(uuid())
+  fileId          String?
+  text            String
+  category        String           // vocabulary, phrase, sentence
+  definition      String
+  translation     String
+  createdAt       DateTime         @default(now())
+  file            File?            @relation(fields: [fileId], references: [id])
+  exampleSentences ExampleSentence[]
+  reviewSchedule  ReviewSchedule?
+
+  @@unique([text, category])
+  @@map("learning_items")
+}
+
+model ExampleSentence {
+  id         String       @id @default(uuid())
+  itemId     String
+  sentence   String
+  orderIndex Int
+  item       LearningItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@map("example_sentences")
+}
+
+model ReviewSchedule {
+  id              String       @id @default(uuid())
+  itemId          String       @unique
+  currentInterval Int          @default(0) // Index into REVIEW_INTERVALS array
+  successCount    Int          @default(0)
+  nextReviewAt    DateTime
+  lastReviewedAt  DateTime?
+  status          String       @default("active") // active, mastered
+  item            LearningItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([nextReviewAt])
+  @@index([status])
+  @@map("review_schedules")
+}
