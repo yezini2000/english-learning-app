@@ -33,15 +33,28 @@ export function ImportPage() {
     const timer = startGenerating();
 
     try {
-      const response = await fetch(`/api/files/${id}/generate`, { method: 'POST' });
-      const data = await response.json();
+      const token = (localStorage.getItem('auth_token') || '').trim();
+      // 启动异步生成任务
+      const startRes = await fetch(`/api/files/${id}/generate`, {
+        method: 'POST',
+        headers: {
+          ...(token ? { 'Authorization': 'Bearer ' + token } : {}),
+        },
+      });
+      const startData = await startRes.json();
 
-      if (!response.ok) {
-        setError(data.message || data.error || '生成学习项失败');
+      if (!startRes.ok) {
+        setError(startData.message || startData.error || '生成学习项失败');
         setGeneratedItems([]);
-      } else {
-        setGeneratedItems(data.items || []);
+        clearInterval(timer);
+        setGenerating(false);
+        return;
       }
+
+      // 轮询任务状态
+      const taskId = startData.taskId;
+      const items = await pollGenerateTask(taskId, token);
+      setGeneratedItems(items);
     } catch (err) {
       setError((err as Error).message);
       setGeneratedItems([]);
@@ -57,25 +70,58 @@ export function ImportPage() {
     const timer = startGenerating();
 
     try {
-      const response = await fetch('/api/files/generate-from-text', {
+      const token = (localStorage.getItem('auth_token') || '').trim();
+      // 启动异步生成任务
+      const startRes = await fetch('/api/files/generate-from-text', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': 'Bearer ' + token } : {}),
+        },
         body: JSON.stringify({ text: textInput.trim() }),
       });
-      const data = await response.json();
+      const startData = await startRes.json();
 
-      if (!response.ok) {
-        setError(data.message || data.error || '生成学习项失败');
+      if (!startRes.ok) {
+        setError(startData.message || startData.error || '生成学习项失败');
         setGeneratedItems([]);
-      } else {
-        setGeneratedItems(data.items || []);
+        clearInterval(timer);
+        setGenerating(false);
+        return;
       }
+
+      // 轮询任务状态
+      const taskId = startData.taskId;
+      const items = await pollGenerateTask(taskId, token);
+      setGeneratedItems(items);
     } catch (err) {
       setError((err as Error).message);
       setGeneratedItems([]);
     } finally {
       clearInterval(timer);
       setGenerating(false);
+    }
+  };
+
+  /** 轮询生成任务状态，每 3 秒查一次 */
+  const pollGenerateTask = async (taskId: string, token: string): Promise<GeneratedItem[]> => {
+    while (true) {
+      await new Promise(resolve => setTimeout(resolve, 3000));
+
+      const res = await fetch(`/api/files/generate-status/${taskId}`, {
+        headers: {
+          ...(token ? { 'Authorization': 'Bearer ' + token } : {}),
+        },
+      });
+      const data = await res.json();
+
+      if (data.status === 'completed') {
+        return data.items || [];
+      }
+      if (data.status === 'failed') {
+        throw new Error(data.error || '生成失败');
+      }
+      // status === 'processing'，继续轮询
     }
   };
 

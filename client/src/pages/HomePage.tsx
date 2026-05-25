@@ -36,17 +36,20 @@ export function HomePage() {
         {/* 统计摘要 */}
         {!loading && stats && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '32px' }}>
-            <div style={{ textAlign: 'center', padding: '20px', background: '#ebf8ff', borderRadius: '8px' }}>
+            <div style={{ textAlign: 'center', padding: '20px', background: '#ebf8ff', borderRadius: '8px' }} title="学习库中所有词汇/词组/语句的总数">
               <p style={{ fontSize: '32px', fontWeight: 'bold', margin: '0', color: '#2b6cb0' }}>{stats.totalItems}</p>
               <p style={{ margin: '4px 0 0', color: '#4a5568' }}>总学习项</p>
+              <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#a0aec0' }}>所有导入的词汇</p>
             </div>
-            <div style={{ textAlign: 'center', padding: '20px', background: '#f0fff4', borderRadius: '8px' }}>
+            <div style={{ textAlign: 'center', padding: '20px', background: '#f0fff4', borderRadius: '8px' }} title="连续答对6次的项目，不再出现在复习中">
               <p style={{ fontSize: '32px', fontWeight: 'bold', margin: '0', color: '#276749' }}>{stats.masteredItems}</p>
               <p style={{ margin: '4px 0 0', color: '#4a5568' }}>已掌握</p>
+              <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#a0aec0' }}>连续答对6次</p>
             </div>
-            <div style={{ textAlign: 'center', padding: '20px', background: dueCount > 0 ? '#fffaf0' : '#f7fafc', borderRadius: '8px' }}>
+            <div style={{ textAlign: 'center', padding: '20px', background: dueCount > 0 ? '#fffaf0' : '#f7fafc', borderRadius: '8px' }} title="已到复习时间的项目，按艾宾浩斯间隔安排">
               <p style={{ fontSize: '32px', fontWeight: 'bold', margin: '0', color: dueCount > 0 ? '#c05621' : '#718096' }}>{dueCount}</p>
               <p style={{ margin: '4px 0 0', color: '#4a5568' }}>待复习</p>
+              <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#a0aec0' }}>已到复习时间</p>
             </div>
           </div>
         )}
@@ -85,7 +88,7 @@ export function HomePage() {
               fontWeight: 'bold',
             }}
           >
-            📁 导入文件
+            📁 导入学习内容
           </button>
 
           <button

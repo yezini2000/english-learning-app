@@ -7,8 +7,30 @@ import { validateFile } from '../services/fileValidator.js';
 import prisma from '../services/prismaClient.js';
 import { getFileExtension } from '../services/fileValidator.js';
 import { PROCESSING_TIMEOUT } from '../types/index.js';
+import { AuthRequest } from '../middleware/auth.js';
+import type { GeneratedItem } from '../types/index.js';
 
 const router = Router();
+
+// ===== 异步生成任务管理 =====
+interface GenerateTask {
+  status: 'processing' | 'completed' | 'failed';
+  items: GeneratedItem[];
+  error?: string;
+  startedAt: number;
+}
+
+const generateTasks = new Map<string, GenerateTask>();
+
+// 定期清理超过 30 分钟的旧任务
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, task] of generateTasks) {
+    if (now - task.startedAt > 30 * 60 * 1000) {
+      generateTasks.delete(id);
+    }
+  }
+}, 5 * 60 * 1000);
 
 // 配置 multer 存储
 const storage = multer.diskStorage({
@@ -30,7 +52,7 @@ const upload = multer({
  * POST /api/files/upload
  * 上传并处理文件
  */
-router.post('/upload', upload.single('file'), async (req: Request, res: Response) => {
+router.post('/upload', upload.single('file'), async (req: AuthRequest, res: Response) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: '未提供文件' });
@@ -58,6 +80,7 @@ router.post('/upload', upload.single('file'), async (req: Request, res: Response
     const fileRecord = await prisma.file.create({
       data: {
         id: uuidv4(),
+        userId: req.userId!,
         originalName: req.file.originalname,
         format: ext,
         sizeBytes: req.file.size,
@@ -77,6 +100,25 @@ router.post('/upload', upload.single('file'), async (req: Request, res: Response
     console.error('文件上传错误:', error);
     return res.status(500).json({ error: '文件上传失败', message: (error as Error).message });
   }
+});
+
+/**
+ * GET /api/files/generate-status/:taskId
+ * 轮询生成任务状态
+ */
+router.get('/generate-status/:taskId', async (req: Request, res: Response) => {
+  const task = generateTasks.get(req.params.taskId);
+
+  if (!task) {
+    return res.status(404).json({ error: '任务不存在或已过期' });
+  }
+
+  return res.json({
+    status: task.status,
+    items: task.status === 'completed' ? task.items : undefined,
+    itemCount: task.items.length,
+    error: task.error,
+  });
 });
 
 /**
@@ -107,7 +149,7 @@ router.get('/:id/status', async (req: Request, res: Response) => {
 
 /**
  * POST /api/files/:id/generate
- * 根据文件提取的内容生成学习项（一次性返回）
+ * 启动异步生成学习项任务，立即返回任务 ID
  */
 router.post('/:id/generate', async (req: Request, res: Response) => {
   try {
@@ -127,15 +169,75 @@ router.post('/:id/generate', async (req: Request, res: Response) => {
       return res.status(400).json({ error: '未从文件中提取到内容', items: [] });
     }
 
-    const { generateItems } = await import('../services/itemGenerator.js');
-    const items = await generateItems(file.extractedText);
+    // 创建异步任务
+    const taskId = uuidv4();
+    generateTasks.set(taskId, {
+      status: 'processing',
+      items: [],
+      startedAt: Date.now(),
+    });
 
-    return res.json({ items });
+    // 后台异步执行 AI 生成
+    runGenerateTask(taskId, file.extractedText);
+
+    return res.json({ taskId, status: 'processing' });
   } catch (error) {
     console.error('生成学习项失败:', error);
     return res.status(500).json({ error: '生成学习项失败', message: (error as Error).message });
   }
 });
+
+/**
+ * POST /api/files/generate-from-text
+ * 直接从输入文本生成学习项（异步模式）
+ */
+router.post('/generate-from-text', async (req: Request, res: Response) => {
+  try {
+    const { text } = req.body as { text?: string };
+
+    if (!text || !text.trim()) {
+      return res.status(400).json({ error: '请输入文本内容' });
+    }
+
+    // 创建异步任务
+    const taskId = uuidv4();
+    generateTasks.set(taskId, {
+      status: 'processing',
+      items: [],
+      startedAt: Date.now(),
+    });
+
+    // 后台异步执行 AI 生成
+    runGenerateTask(taskId, text.trim());
+
+    return res.json({ taskId, status: 'processing' });
+  } catch (error) {
+    console.error('生成学习项失败:', error);
+    return res.status(500).json({ error: '生成学习项失败', message: (error as Error).message });
+  }
+});
+
+/**
+ * 后台执行 AI 生成任务
+ */
+async function runGenerateTask(taskId: string, text: string): Promise<void> {
+  try {
+    const { generateItems } = await import('../services/itemGenerator.js');
+    const items = await generateItems(text);
+
+    const task = generateTasks.get(taskId);
+    if (task) {
+      task.status = 'completed';
+      task.items = items;
+    }
+  } catch (error) {
+    const task = generateTasks.get(taskId);
+    if (task) {
+      task.status = 'failed';
+      task.error = (error as Error).message;
+    }
+  }
+}
 
 /**
  * 异步处理文件（带超时保护）
@@ -209,27 +311,5 @@ async function processFileAsync(fileId: string, filePath: string, format: string
     });
   }
 }
-
-/**
- * POST /api/files/generate-from-text
- * 直接从输入文本生成学习项（一次性返回）
- */
-router.post('/generate-from-text', async (req: Request, res: Response) => {
-  try {
-    const { text } = req.body as { text?: string };
-
-    if (!text || !text.trim()) {
-      return res.status(400).json({ error: '请输入文本内容' });
-    }
-
-    const { generateItems } = await import('../services/itemGenerator.js');
-    const items = await generateItems(text.trim());
-
-    return res.json({ items });
-  } catch (error) {
-    console.error('生成学习项失败:', error);
-    return res.status(500).json({ error: '生成学习项失败', message: (error as Error).message });
-  }
-});
 
 export default router;

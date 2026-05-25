@@ -5,6 +5,7 @@ import prisma from '../services/prismaClient.js';
 import { isDuplicateText } from '../services/duplicateDetector.js';
 import { scheduleFirstReview, getMasteryLevel } from '../services/reviewScheduler.js';
 import { MAX_PAGE_SIZE, GeneratedItem, ItemCategory, MasteryLevel } from '../types/index.js';
+import { AuthRequest } from '../middleware/auth.js';
 
 const router = Router();
 
@@ -12,16 +13,18 @@ const router = Router();
  * POST /api/items/batch
  * 批量添加生成的学习项到学习库
  */
-router.post('/batch', async (req: Request, res: Response) => {
+router.post('/batch', async (req: AuthRequest, res: Response) => {
   try {
     const { items, fileId } = req.body as { items: GeneratedItem[]; fileId?: string };
+    const userId = req.userId!;
 
     if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: '请提供学习项列表' });
     }
 
-    // 获取已有项目用于重复检测
+    // 获取当前用户已有项目用于重复检测
     const existingItems = await prisma.learningItem.findMany({
+      where: { userId },
       select: { text: true, category: true },
     });
 
@@ -51,11 +54,13 @@ router.post('/batch', async (req: Request, res: Response) => {
       const created = await prisma.learningItem.create({
         data: {
           id: itemId,
+          userId,
           fileId: fileId || null,
           text: item.text,
           category: item.category,
           definition: item.definition,
           translation: item.translation,
+          correction: item.correction || null,
           exampleSentences: {
             create: item.exampleSentences.map((sentence, index) => ({
               id: uuidv4(),
@@ -89,16 +94,18 @@ router.post('/batch', async (req: Request, res: Response) => {
  * GET /api/items
  * 获取学习项列表（分页、筛选、搜索）
  */
-router.get('/', async (req: Request, res: Response) => {
+router.get('/', async (req: AuthRequest, res: Response) => {
   try {
+    const userId = req.userId!;
     const page = Math.max(1, parseInt(req.query.page as string) || 1);
     const pageSize = Math.min(MAX_PAGE_SIZE, parseInt(req.query.pageSize as string) || MAX_PAGE_SIZE);
     const category = req.query.category as ItemCategory | undefined;
     const masteryLevel = req.query.masteryLevel as MasteryLevel | undefined;
     const search = req.query.search as string | undefined;
+    const correctionFilter = req.query.correctionFilter as string | undefined;
 
     // 构建查询条件
-    const where: any = {};
+    const where: any = { userId };
 
     if (category) {
       where.category = category;
@@ -110,6 +117,13 @@ router.get('/', async (req: Request, res: Response) => {
         { definition: { contains: search } },
         { translation: { contains: search } },
       ];
+    }
+
+    // 纠错筛选
+    if (correctionFilter === 'has') {
+      where.correction = { not: null };
+    } else if (correctionFilter === 'none') {
+      where.correction = null;
     }
 
     // 掌握程度筛选需要关联查询
@@ -137,13 +151,14 @@ router.get('/', async (req: Request, res: Response) => {
       prisma.learningItem.count({ where }),
     ]);
 
-    const formattedItems = items.map(item => ({
+    const formattedItems = items.map((item: any) => ({
       id: item.id,
       text: item.text,
       category: item.category,
       definition: item.definition,
       translation: item.translation,
-      exampleSentences: item.exampleSentences.map(e => e.sentence),
+      correction: item.correction,
+      exampleSentences: item.exampleSentences.map((e: any) => e.sentence),
       createdAt: item.createdAt,
       masteryLevel: getMasteryLevel(item.reviewSchedule?.successCount || 0),
       nextReviewAt: item.reviewSchedule?.nextReviewAt,
@@ -163,15 +178,32 @@ router.get('/', async (req: Request, res: Response) => {
 });
 
 /**
+ * POST /api/items/corrections/dismiss-all
+ * 清除所有纠错说明（标记为已读）
+ */
+router.post('/corrections/dismiss-all', async (req: AuthRequest, res: Response) => {
+  try {
+    const result = await prisma.learningItem.updateMany({
+      where: { userId: req.userId!, correction: { not: null } },
+      data: { correction: null },
+    });
+
+    return res.json({ dismissed: result.count, message: `已清除 ${result.count} 条纠错说明` });
+  } catch (error) {
+    return res.status(500).json({ error: '操作失败', message: (error as Error).message });
+  }
+});
+
+/**
  * DELETE /api/items/:id
  * 删除学习项（级联删除例句和复习计划）
  */
-router.delete('/:id', async (req: Request, res: Response) => {
+router.delete('/:id', async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
 
     const item = await prisma.learningItem.findUnique({ where: { id } });
-    if (!item) {
+    if (!item || item.userId !== req.userId!) {
       return res.status(404).json({ error: '学习项不存在' });
     }
 

@@ -1,6 +1,6 @@
 // 学习库管理组件 - 分页表格、筛选、搜索、删除
 import { useState, useEffect, useCallback } from 'react';
-import { getItems, deleteItem } from '../services/api';
+import { getItems, deleteItem, dismissAllCorrections } from '../services/api';
 import { PronunciationPlayer } from './PronunciationPlayer';
 import type { LearningItem, ItemCategory, MasteryLevel } from '../types/index';
 
@@ -11,6 +11,7 @@ export function LearningLibrary() {
   const [totalPages, setTotalPages] = useState(0);
   const [category, setCategory] = useState<ItemCategory | ''>('');
   const [masteryLevel, setMasteryLevel] = useState<MasteryLevel | ''>('');
+  const [correctionFilter, setCorrectionFilter] = useState<string>('');
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
@@ -21,6 +22,7 @@ export function LearningLibrary() {
       const params: any = { page };
       if (category) params.category = category;
       if (masteryLevel) params.masteryLevel = masteryLevel;
+      if (correctionFilter) params.correctionFilter = correctionFilter;
       if (search) params.search = search;
 
       const result = await getItems(params);
@@ -32,7 +34,7 @@ export function LearningLibrary() {
     } finally {
       setLoading(false);
     }
-  }, [page, category, masteryLevel, search]);
+  }, [page, category, masteryLevel, correctionFilter, search]);
 
   useEffect(() => {
     fetchItems();
@@ -55,6 +57,15 @@ export function LearningLibrary() {
       fetchItems();
     } catch (err) {
       console.error('删除失败:', err);
+    }
+  };
+
+  const handleDismissAll = async () => {
+    try {
+      await dismissAllCorrections();
+      fetchItems();
+    } catch (err) {
+      console.error('清除纠错失败:', err);
     }
   };
 
@@ -113,6 +124,16 @@ export function LearningLibrary() {
           <option value="mastered">已掌握</option>
         </select>
 
+        <select
+          value={correctionFilter}
+          onChange={(e) => { setCorrectionFilter(e.target.value); setPage(1); }}
+          style={{ padding: '8px 12px', borderRadius: '4px', border: '1px solid #e2e8f0' }}
+        >
+          <option value="">全部纠错状态</option>
+          <option value="has">有纠错</option>
+          <option value="none">无纠错</option>
+        </select>
+
         <input
           type="text"
           placeholder="搜索..."
@@ -122,8 +143,18 @@ export function LearningLibrary() {
         />
       </div>
 
-      {/* 总数 */}
-      <p style={{ color: '#718096', marginBottom: '12px' }}>共 {total} 项</p>
+      {/* 总数 + 全部已读按钮 */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+        <p style={{ color: '#718096', margin: 0 }}>共 {total} 项</p>
+        {items.some(i => i.correction) && (
+          <button
+            onClick={handleDismissAll}
+            style={{ padding: '6px 12px', fontSize: '12px', background: '#fff5f5', color: '#e53e3e', border: '1px solid #e53e3e', borderRadius: '4px', cursor: 'pointer' }}
+          >
+            ✏️ 纠错全部已读
+          </button>
+        )}
+      </div>
 
       {/* 加载中 */}
       {loading && <p style={{ textAlign: 'center' }}>加载中...</p>}
@@ -159,6 +190,11 @@ export function LearningLibrary() {
                 </span>
               </div>
               <p style={{ margin: '4px 0', fontSize: '14px', color: '#4a5568' }}>{item.translation}</p>
+              {item.correction && (
+                <p style={{ margin: '4px 0', fontSize: '12px', color: '#e53e3e', background: '#fff5f5', padding: '4px 8px', borderRadius: '4px', borderLeft: '3px solid #e53e3e' }}>
+                  ✏️ {item.correction}
+                </p>
+              )}
               {item.nextReviewAt && (
                 <p style={{ margin: '2px 0', fontSize: '12px', color: '#a0aec0' }}>
                   下次复习: {new Date(item.nextReviewAt).toLocaleDateString('zh-CN')}

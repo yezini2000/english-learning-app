@@ -16,6 +16,7 @@ export interface LearningItem {
   category: ItemCategory;
   definition: string;
   translation: string;
+  correction?: string | null;
   exampleSentences: string[];
   createdAt: string;
   masteryLevel: MasteryLevel;

@@ -7,16 +7,30 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model User {
+  id            String         @id @default(uuid())
+  email         String         @unique
+  passwordHash  String
+  nickname      String?
+  createdAt     DateTime       @default(now())
+  files         File[]
+  learningItems LearningItem[]
+
+  @@map("users")
+}
+
 model File {
   id            String         @id @default(uuid())
+  userId        String
   originalName  String
   format        String
   sizeBytes     Int
-  status        String         @default("pending") // pending, processing, completed, failed
+  status        String         @default("pending")
   extractedText String?
   errorMessage  String?
   createdAt     DateTime       @default(now())
   processedAt   DateTime?
+  user          User           @relation(fields: [userId], references: [id])
   learningItems LearningItem[]
 
   @@map("files")
@@ -24,17 +38,20 @@ model File {
 
 model LearningItem {
   id              String           @id @default(uuid())
+  userId          String
   fileId          String?
   text            String
-  category        String           // vocabulary, phrase, sentence
+  category        String
   definition      String
   translation     String
+  correction      String?
   createdAt       DateTime         @default(now())
+  user            User             @relation(fields: [userId], references: [id])
   file            File?            @relation(fields: [fileId], references: [id])
   exampleSentences ExampleSentence[]
   reviewSchedule  ReviewSchedule?
 
-  @@unique([text, category])
+  @@unique([userId, text, category])
   @@map("learning_items")
 }
 
@@ -51,11 +68,11 @@ model ExampleSentence {
 model ReviewSchedule {
   id              String       @id @default(uuid())
   itemId          String       @unique
-  currentInterval Int          @default(0) // Index into REVIEW_INTERVALS array
+  currentInterval Int          @default(0)
   successCount    Int          @default(0)
   nextReviewAt    DateTime
   lastReviewedAt  DateTime?
-  status          String       @default("active") // active, mastered
+  status          String       @default("active")
   item            LearningItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
 
   @@index([nextReviewAt])

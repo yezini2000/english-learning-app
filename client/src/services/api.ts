@@ -15,10 +15,23 @@ import type {
 const API_BASE = '/api';
 
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
+  const token = (localStorage.getItem('auth_token') || '').trim();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) {
+    headers['Authorization'] = 'Bearer ' + token;
+  }
+
   const response = await fetch(`${API_BASE}${url}`, {
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     ...options,
   });
+
+  if (response.status === 401) {
+    localStorage.removeItem('auth_token');
+    localStorage.removeItem('auth_user');
+    window.location.href = '/login';
+    throw new Error('登录已过期');
+  }
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ message: '请求失败' }));
@@ -34,10 +47,24 @@ export async function uploadFile(file: File): Promise<{ id: string; status: stri
   const formData = new FormData();
   formData.append('file', file);
 
+  const token = (localStorage.getItem('auth_token') || '').trim();
+  const headers: HeadersInit = {};
+  if (token) {
+    (headers as Record<string, string>)['Authorization'] = 'Bearer ' + token;
+  }
+
   const response = await fetch(`${API_BASE}/files/upload`, {
     method: 'POST',
+    headers,
     body: formData,
   });
+
+  if (response.status === 401) {
+    localStorage.removeItem('auth_token');
+    localStorage.removeItem('auth_user');
+    window.location.href = '/login';
+    throw new Error('登录已过期');
+  }
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ message: '上传失败' }));
@@ -59,6 +86,7 @@ export async function getItems(params: {
   category?: ItemCategory;
   masteryLevel?: MasteryLevel;
   search?: string;
+  correctionFilter?: string;
 }): Promise<PaginatedResponse<LearningItem>> {
   const searchParams = new URLSearchParams();
   if (params.page) searchParams.set('page', String(params.page));
@@ -66,8 +94,13 @@ export async function getItems(params: {
   if (params.category) searchParams.set('category', params.category);
   if (params.masteryLevel) searchParams.set('masteryLevel', params.masteryLevel);
   if (params.search) searchParams.set('search', params.search);
+  if (params.correctionFilter) searchParams.set('correctionFilter', params.correctionFilter);
 
   return request<PaginatedResponse<LearningItem>>(`/items?${searchParams.toString()}`);
+}
+
+export async function dismissAllCorrections(): Promise<{ dismissed: number; message: string }> {
+  return request('/items/corrections/dismiss-all', { method: 'POST' });
 }
 
 export async function deleteItem(id: string): Promise<void> {

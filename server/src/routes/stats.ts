@@ -1,6 +1,7 @@
 // 学习统计 API 路由
 import { Router, Request, Response } from 'express';
 import prisma from '../services/prismaClient.js';
+import { AuthRequest } from '../middleware/auth.js';
 
 const router = Router();
 
@@ -8,22 +9,21 @@ const router = Router();
  * GET /api/stats
  * 获取学习统计数据
  */
-router.get('/', async (_req: Request, res: Response) => {
+router.get('/', async (req: AuthRequest, res: Response) => {
   try {
+    const userId = req.userId!;
     const now = new Date();
 
     const [totalItems, masteredItems, dueItems] = await Promise.all([
-      // 总项目数
-      prisma.learningItem.count(),
-      // 已掌握项目数
+      prisma.learningItem.count({ where: { userId } }),
       prisma.reviewSchedule.count({
-        where: { status: 'mastered' },
+        where: { status: 'mastered', item: { userId } },
       }),
-      // 到期待复习项目数
       prisma.reviewSchedule.count({
         where: {
           status: 'active',
           nextReviewAt: { lte: now },
+          item: { userId },
         },
       }),
     ]);

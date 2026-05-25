@@ -10,8 +10,8 @@ const prisma = new PrismaClient();
  */
 export async function scheduleFirstReview(itemId: string): Promise<void> {
   const now = new Date();
-  // 首次复习安排在 1 天后（24小时内）
-  const nextReviewAt = new Date(now.getTime() + REVIEW_INTERVALS[0] * 24 * 60 * 60 * 1000);
+  // 导入后立即可复习
+  const nextReviewAt = now;
   
   await prisma.reviewSchedule.create({
     data: {
@@ -90,14 +90,19 @@ export async function resetToFirstInterval(itemId: string): Promise<void> {
 /**
  * 获取到期需要复习的学习项
  */
-export async function getDueItems(limit: number = MAX_SESSION_ITEMS): Promise<LearningItem[]> {
+export async function getDueItems(limit: number = MAX_SESSION_ITEMS, userId?: string): Promise<LearningItem[]> {
   const now = new Date();
   
+  const where: any = {
+    status: 'active',
+    nextReviewAt: { lte: now },
+  };
+  if (userId) {
+    where.item = { userId };
+  }
+
   const schedules = await prisma.reviewSchedule.findMany({
-    where: {
-      status: 'active',
-      nextReviewAt: { lte: now },
-    },
+    where,
     include: {
       item: {
         include: {
@@ -111,14 +116,14 @@ export async function getDueItems(limit: number = MAX_SESSION_ITEMS): Promise<Le
     orderBy: { nextReviewAt: 'asc' },
   });
   
-  return schedules.map(s => ({
+  return schedules.map((s: any) => ({
     id: s.item.id,
     fileId: s.item.fileId || undefined,
     text: s.item.text,
     category: s.item.category as LearningItem['category'],
     definition: s.item.definition,
     translation: s.item.translation,
-    exampleSentences: s.item.exampleSentences.map(e => e.sentence),
+    exampleSentences: s.item.exampleSentences.map((e: any) => e.sentence),
     createdAt: s.item.createdAt,
   }));
 }
@@ -126,15 +131,18 @@ export async function getDueItems(limit: number = MAX_SESSION_ITEMS): Promise<Le
 /**
  * 获取到期学习项数量
  */
-export async function getDueCount(): Promise<number> {
+export async function getDueCount(userId?: string): Promise<number> {
   const now = new Date();
   
-  return prisma.reviewSchedule.count({
-    where: {
-      status: 'active',
-      nextReviewAt: { lte: now },
-    },
-  });
+  const where: any = {
+    status: 'active',
+    nextReviewAt: { lte: now },
+  };
+  if (userId) {
+    where.item = { userId };
+  }
+
+  return prisma.reviewSchedule.count({ where });
 }
 
 /**

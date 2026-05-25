@@ -4,6 +4,8 @@ import cors from 'cors';
 import path from 'path';
 import { mkdirSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
+import { authMiddleware } from './middleware/auth.js';
+import authRouter from './routes/auth.js';
 import filesRouter from './routes/files.js';
 import itemsRouter from './routes/items.js';
 import reviewRouter from './routes/review.js';
@@ -26,19 +28,22 @@ try {
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
-// 健康检查
+// 健康检查（无需鉴权）
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// API 路由
-app.use('/api/files', filesRouter);
-app.use('/api/items', itemsRouter);
-app.use('/api/review', reviewRouter);
-app.use('/api/stats', statsRouter);
+// 认证路由（无需鉴权）
+app.use('/api/auth', authRouter);
+
+// 以下路由需要鉴权
+app.use('/api/files', authMiddleware, filesRouter);
+app.use('/api/items', authMiddleware, itemsRouter);
+app.use('/api/review', authMiddleware, reviewRouter);
+app.use('/api/stats', authMiddleware, statsRouter);
 
 // 生产环境：serve 前端静态文件
-const clientDistPath = path.join(__dirname, '../../client/dist');
+const clientDistPath = path.join(__dirname, '../../../client/dist');
 if (existsSync(clientDistPath)) {
   app.use(express.static(clientDistPath));
   // SPA fallback - 所有非 API 路由返回 index.html

@@ -7,11 +7,12 @@ import { GeneratedItem, MAX_GENERATED_ITEMS } from '../types/index.js';
 const GENERATION_PROMPT = `You are an English learning assistant. Analyze the following text and extract useful English learning items for a Chinese learner.
 
 For each item, provide:
-1. The English text (word, phrase, or sentence)
+1. The English text (word, phrase, or sentence) - CORRECTED to be grammatically correct and natural/idiomatic if the original has errors
 2. Category: "vocabulary" (single word), "phrase" (multi-word expression), or "sentence" (full sentence)
 3. English definition
 4. Chinese translation
 5. For vocabulary and phrases: 1-3 example sentences
+6. If the original text had errors or unnatural expressions, include a "correction" field explaining what was wrong and how you fixed it (in Chinese)
 
 Return ONLY a JSON array (no markdown, no code blocks) with this structure:
 [
@@ -20,7 +21,16 @@ Return ONLY a JSON array (no markdown, no code blocks) with this structure:
     "category": "vocabulary",
     "definition": "a thing characteristic of its kind",
     "translation": "例子",
-    "exampleSentences": ["This is a good example.", "Can you give me an example?"]
+    "exampleSentences": ["This is a good example.", "Can you give me an example?"],
+    "correction": null
+  },
+  {
+    "text": "I have been working here for three years.",
+    "category": "sentence",
+    "definition": "A statement about duration of employment",
+    "translation": "我在这里工作了三年。",
+    "exampleSentences": [],
+    "correction": "原文 'I have been work here for three years' 语法错误：work 应改为 working（现在完成进行时）"
   }
 ]
 
@@ -28,6 +38,8 @@ Rules:
 - Extract ALL English vocabulary, phrases, and sentences from the text. Do not skip any items.
 - The "text" field MUST be in English only. Do NOT extract Chinese words or phrases as learning items.
 - If the input contains Chinese explanations paired with English words, only extract the English words/phrases, not the Chinese.
+- IMPORTANT: If the original English text contains grammatical errors, spelling mistakes, or unnatural/non-idiomatic expressions, CORRECT them in the "text" field and explain the correction in the "correction" field (in Chinese).
+- If the original text is correct and natural, set "correction" to null.
 - Sentences should be complete and meaningful
 - Definitions should be clear and concise
 - Translations should be natural Chinese
@@ -181,6 +193,7 @@ export function validateAndCleanItems(items: any[]): GeneratedItem[] {
       definition: item.definition.trim(),
       translation: item.translation.trim(),
       exampleSentences: validateExampleSentences(item),
+      correction: item.correction && typeof item.correction === 'string' ? item.correction.trim() : null,
     }));
 }
 

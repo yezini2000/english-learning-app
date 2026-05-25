@@ -66,6 +66,7 @@ export interface GeneratedItem {
   definition: string;
   translation: string;
   exampleSentences: string[];
+  correction?: string | null;
 }
 
 // ===== 复习调度相关类型 =====

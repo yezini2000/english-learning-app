@@ -8,6 +8,7 @@ import {
   resetToFirstInterval,
 } from '../services/reviewScheduler.js';
 import { MAX_SESSION_ITEMS, ReviewSession, ReviewSessionItem } from '../types/index.js';
+import { AuthRequest } from '../middleware/auth.js';
 
 const router = Router();
 
@@ -18,9 +19,9 @@ const activeSessions = new Map<string, ReviewSession>();
  * GET /api/review/due
  * 获取到期学习项数量
  */
-router.get('/due', async (_req: Request, res: Response) => {
+router.get('/due', async (req: AuthRequest, res: Response) => {
   try {
-    const count = await getDueCount();
+    const count = await getDueCount(req.userId!);
     return res.json({ dueCount: count });
   } catch (error) {
     return res.status(500).json({ error: '获取到期项数量失败', message: (error as Error).message });
@@ -31,9 +32,9 @@ router.get('/due', async (_req: Request, res: Response) => {
  * POST /api/review/session
  * 开始复习会话（最多 50 项）
  */
-router.post('/session', async (_req: Request, res: Response) => {
+router.post('/session', async (req: AuthRequest, res: Response) => {
   try {
-    const dueItems = await getDueItems(MAX_SESSION_ITEMS);
+    const dueItems = await getDueItems(MAX_SESSION_ITEMS, req.userId!);
     
     if (dueItems.length === 0) {
       return res.json({
